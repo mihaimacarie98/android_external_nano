@@ -2,7 +2,7 @@
 # Generate configure & friends for GIT users.
 
 gnulib_url="git://git.sv.gnu.org/gnulib.git"
-gnulib_hash="135414a7f543e4d40ad0a7cbd51885e159a6e0f4"
+gnulib_hash="2cf7f442f52f70b3df6eb396eb93ea08e54883c5"
 
 modules="
 	futimens
@@ -36,14 +36,26 @@ fi
 cd gnulib >/dev/null || exit 1
 curr_hash=$(git log -1 --format=%H)
 if [ "${gnulib_hash}" != "${curr_hash}" ]; then
+	echo "Pulling..."
 	git pull
-	git checkout -f ${gnulib_hash}
+	git checkout --force ${gnulib_hash}
 fi
 cd .. >/dev/null || exit 1
 
-rm -rf lib
-./gnulib/gnulib-tool \
-	--import \
-	${modules}
+echo "Autopoint..."
+autopoint --force
 
-autoreconf -f -i -s
+rm -rf lib
+echo "Gnulib-tool..."
+./gnulib/gnulib-tool --import ${modules}
+echo
+
+echo "Aclocal..."
+aclocal -I m4
+echo "Autoconf..."
+autoconf
+echo "Autoheader..."
+autoheader
+echo "Automake..."
+automake --add-missing
+echo "Done."

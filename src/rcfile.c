@@ -1,10 +1,10 @@
 /**************************************************************************
  *   rcfile.c  --  This file is part of GNU nano.                         *
  *                                                                        *
- *   Copyright (C) 2001-2011, 2013-2021 Free Software Foundation, Inc.    *
+ *   Copyright (C) 2001-2011, 2013-2023 Free Software Foundation, Inc.    *
  *   Copyright (C) 2014 Mike Frysinger                                    *
  *   Copyright (C) 2019 Brand Huntsman                                    *
- *   Copyright (C) 2014-2020 Benno Schulenberg                            *
+ *   Copyright (C) 2014-2021 Benno Schulenberg                            *
  *                                                                        *
  *   GNU nano is free software: you can redistribute it and/or modify     *
  *   it under the terms of the GNU General Public License as published    *
@@ -90,9 +90,6 @@ static const rcoption rcopts[] = {
 #ifdef ENABLE_SPELLER
 	{"speller", 0},
 #endif
-	{"suspend", SUSPENDABLE},  /* Deprecated; remove in 2022. */
-	{"suspendable", SUSPENDABLE},  /* Obsolete; remove in 2022. */
-	{"tempfile", SAVE_ON_EXIT},  /* Deprecated; remove in 2022. */
 #ifndef NANO_TINY
 	{"afterends", AFTER_ENDS},
 	{"allow_insecure_backup", INSECURE_BACKUP},
@@ -156,18 +153,6 @@ static bool seen_color_command = FALSE;
 static colortype *lastcolor = NULL;
 		/* The end of the color list for the current syntax. */
 #endif
-
-#define NUMBER_OF_MENUS  17  /* Remove the deprecated 'extcmd' in 2022. */
-char *menunames[NUMBER_OF_MENUS] = { "main", "search", "replace", "replacewith",
-									"yesno", "gotoline", "writeout", "insert",
-									"execute", "extcmd", "help", "spell", "linter",
-									"browser", "whereisfile", "gotodir",
-									"all" };
-int menusymbols[NUMBER_OF_MENUS] = { MMAIN, MWHEREIS, MREPLACE, MREPLACEWITH,
-									MYESNO, MGOTOLINE, MWRITEFILE, MINSERTFILE,
-									MEXECUTE, MEXECUTE, MHELP, MSPELL, MLINTER,
-									MBROWSER, MWHEREISFILE, MGOTODIR,
-									MMOST|MBROWSER|MHELP|MYESNO };
 #endif /* ENABLE_NANORC */
 
 #if defined(ENABLE_NANORC) || defined(ENABLE_HISTORIES)
@@ -279,14 +264,15 @@ keystruct *strtosc(const char *input)
 	         !strcmp(input, "speller"))
 		s->func = do_spell;
 #endif
-#ifdef ENABLE_COLOR
+#ifdef ENABLE_LINTER
 	else if (!strcmp(input, "linter"))
 		s->func = do_linter;
+#endif
+#ifdef ENABLE_FORMATTER
 	else if (!strcmp(input, "formatter"))
 		s->func = do_formatter;
 #endif
-	else if (!strcmp(input, "location") ||
-	         !strcmp(input, "curpos"))  /* Deprecated; remove in 2022. */
+	else if (!strcmp(input, "location"))
 		s->func = report_cursor_position;
 	else if (!strcmp(input, "gotoline"))
 		s->func = do_gotolinecolumn;
@@ -497,6 +483,18 @@ keystruct *strtosc(const char *input)
 	return s;
 }
 
+#define NUMBER_OF_MENUS  16
+char *menunames[NUMBER_OF_MENUS] = { "main", "search", "replace", "replacewith",
+									"yesno", "gotoline", "writeout", "insert",
+									"execute", "help", "spell", "linter",
+									"browser", "whereisfile", "gotodir",
+									"all" };
+int menusymbols[NUMBER_OF_MENUS] = { MMAIN, MWHEREIS, MREPLACE, MREPLACEWITH,
+									MYESNO, MGOTOLINE, MWRITEFILE, MINSERTFILE,
+									MEXECUTE, MHELP, MSPELL, MLINTER,
+									MBROWSER, MWHEREISFILE, MGOTODIR,
+									MMOST|MBROWSER|MHELP|MYESNO };
+
 /* Return the symbol that corresponds to the given menu name. */
 int name_to_menu(const char *name)
 {
@@ -506,7 +504,7 @@ int name_to_menu(const char *name)
 		if (strcmp(name, menunames[index]) == 0)
 			return menusymbols[index];
 
-	return -1;
+	return 0;
 }
 
 /* Return the name that corresponds to the given menu symbol. */
@@ -676,7 +674,7 @@ void begin_new_syntax(char *ptr)
 	live_syntax->magics = NULL;
 	live_syntax->linter = NULL;
 	live_syntax->formatter = NULL;
-	live_syntax->tab = NULL;
+	live_syntax->tabstring = NULL;
 #ifdef ENABLE_COMMENT
 	live_syntax->comment = copy_of(GENERAL_COMMENT_CHARACTER);
 #endif
@@ -789,6 +787,12 @@ void parse_binding(char *ptr, bool dobind)
 		goto free_things;
 	}
 
+	menu = name_to_menu(menuptr);
+	if (menu == 0) {
+		jot_error(N_("Unknown menu: %s"), menuptr);
+		goto free_things;
+	}
+
 	if (dobind) {
 		/* If the thing to bind starts with a double quote, it is a string,
 		 * otherwise it is the name of a function. */
@@ -803,15 +807,9 @@ void parse_binding(char *ptr, bool dobind)
 			newsc = strtosc(funcptr);
 
 		if (newsc == NULL) {
-			jot_error(N_("Cannot map name \"%s\" to a function"), funcptr);
+			jot_error(N_("Unknown function: %s"), funcptr);
 			goto free_things;
 		}
-	}
-
-	menu = name_to_menu(menuptr);
-	if (menu < 1) {
-		jot_error(N_("Cannot map name \"%s\" to a menu"), menuptr);
-		goto free_things;
 	}
 
 	/* Wipe the given shortcut from the given menu. */
@@ -901,7 +899,7 @@ bool is_good_file(char *file)
 
 #ifdef ENABLE_COLOR
 /* Partially parse the syntaxes in the given file, or (when syntax
- * is not NULL) fully parse one specific syntax from the file . */
+ * is not NULL) fully parse one specific syntax from the file. */
 void parse_one_include(char *file, syntaxtype *syntax)
 {
 	char *was_nanorc = nanorc;
@@ -910,7 +908,7 @@ void parse_one_include(char *file, syntaxtype *syntax)
 	FILE *rcstream;
 
 	/* Don't open directories, character files, or block files. */
-	if (!is_good_file(file))
+	if (access(file, R_OK) == 0 && !is_good_file(file))
 		return;
 
 	rcstream = fopen(file, "rb");
@@ -978,7 +976,7 @@ void parse_includes(char *ptr)
 
 	/* Expand a tilde first, then try to match the globbing pattern. */
 	expanded = real_dir_from_tilde(pattern);
-	result = glob(expanded, GLOB_ERR, NULL, &files);
+	result = glob(expanded, GLOB_ERR|GLOB_NOCHECK, NULL, &files);
 
 	/* If there are matches, process each of them.  Otherwise, only
 	 * report an error if it's something other than zero matches. */
@@ -1327,7 +1325,7 @@ bool parse_syntax_commands(char *keyword, char *ptr)
 		pick_up_name("comment", ptr, &live_syntax->comment);
 #endif
 	} else if (strcmp(keyword, "tabgives") == 0) {
-		pick_up_name("tabgives", ptr, &live_syntax->tab);
+		pick_up_name("tabgives", ptr, &live_syntax->tabstring);
 	} else if (strcmp(keyword, "linter") == 0)
 		pick_up_name("linter", ptr, &live_syntax->linter);
 	else if (strcmp(keyword, "formatter") == 0)
@@ -1352,7 +1350,7 @@ static void check_vitals_mapped(void)
 			if (f->func == vitals[v] && f->menus & inmenus[v]) {
 				if (first_sc_for(inmenus[v], f->func) == NULL) {
 					jot_error(N_("No key is bound to function '%s' in menu '%s'. "
-								" Exiting.\n"), f->desc, menu_to_name(inmenus[v]));
+								" Exiting.\n"), f->tag, menu_to_name(inmenus[v]));
 					die(_("If needed, use nano with the -I option "
 								"to adjust your nanorc settings.\n"));
 				} else
@@ -1534,7 +1532,7 @@ void parse_rcfile(FILE *rcstream, bool just_syntax, bool intros_only)
 		}
 
 		if (rcopts[i].name == NULL) {
-			jot_error(N_("Unknown option \"%s\""), option);
+			jot_error(N_("Unknown option: %s"), option);
 			continue;
 		}
 
@@ -1709,7 +1707,7 @@ void do_rcfiles(void)
 {
 	if (custom_nanorc) {
 		nanorc = get_full_path(custom_nanorc);
-		if (access(nanorc, F_OK) != 0)
+		if (nanorc == NULL || access(nanorc, F_OK) != 0)
 			die(_("Specified rcfile does not exist\n"));
 	} else
 		nanorc = mallocstrcpy(nanorc, SYSCONFDIR "/nanorc");

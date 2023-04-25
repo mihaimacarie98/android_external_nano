@@ -1,7 +1,7 @@
 /**************************************************************************
  *   definitions.h  --  This file is part of GNU nano.                    *
  *                                                                        *
- *   Copyright (C) 1999-2011, 2013-2021 Free Software Foundation, Inc.    *
+ *   Copyright (C) 1999-2011, 2013-2023 Free Software Foundation, Inc.    *
  *   Copyright (C) 2014-2017 Benno Schulenberg                            *
  *                                                                        *
  *   GNU nano is free software: you can redistribute it and/or modify     *
@@ -108,6 +108,14 @@
 #define BACKWARD  FALSE
 #define FORWARD  TRUE
 
+#define YESORNO  FALSE
+#define YESORALLORNO  TRUE
+
+#define YES      1
+#define ALL      2
+#define NO       0
+#define CANCEL  -1
+
 #define BLIND  FALSE
 #define VISIBLE  TRUE
 
@@ -162,8 +170,6 @@
 		/* The start regex matches on an earlier line, the end regex on this one. */
 #define JUSTONTHIS   (1<<5)
 		/* Both the start and end regexes match within this line. */
-#define WOULDBE      (1<<6)
-		/* An unpaired start match is on or before this line. */
 #endif
 
 /* Basic control codes. */
@@ -207,6 +213,14 @@
 #define SHIFT_PAGEDOWN  0x458
 #define SHIFT_DELETE    0x45D
 #define SHIFT_TAB       0x45F
+
+/* Special keycodes for when a string bind has been partially implanted
+ * or has an unpaired opening brace, or when a function in a string bind
+ * needs execution or a specified function name is invalid. */
+#define MORE_PLANTS       0x4EA
+#define MISSING_BRACE     0x4EB
+#define PLANTED_COMMAND   0x4EC
+#define NO_SUCH_FUNCTION  0x4EF
 
 /* A special keycode for when <Tab> is pressed while the mark is on. */
 #define INDENT_KEY  0x4F1
@@ -313,7 +327,6 @@ enum {
 	CASE_SENSITIVE,
 	CONSTANT_SHOW,
 	NO_HELP,
-	SUSPENDABLE,
 	NO_WRAP,
 	AUTOINDENT,
 	VIEW_MODE,
@@ -419,7 +432,7 @@ typedef struct syntaxtype {
 		/* The command with which to lint this type of file. */
 	char *formatter;
 		/* The command with which to format/modify/arrange this type of file. */
-	char *tab;
+	char *tabstring;
 		/* What the Tab key should produce; NULL for default behavior. */
 #ifdef ENABLE_COMMENT
 	char *comment;
@@ -622,17 +635,14 @@ typedef struct keystruct {
 typedef struct funcstruct {
 	void (*func)(void);
 		/* The actual function to call. */
-	const char *desc;
-		/* The function's short description, for example "Where Is". */
+	const char *tag;
+		/* The function's help-line label, for example "Where Is". */
 #ifdef ENABLE_HELP
-	const char *help;
-		/* The help-screen text for this function. */
+	const char *phrase;
+		/* The function's description for in the help viewer. */
 	bool blank_after;
-		/* Whether there should be a blank line after the help text
-		 * for this function. */
+		/* Whether to distance this function from the next in the help viewer. */
 #endif
-	bool viewok;
-		/* Is this function allowed when in view mode? */
 	int menus;
 		/* In what menus this function applies. */
 	struct funcstruct *next;
